@@ -1,0 +1,160 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Incident Console</title>
+<!--<link rel="stylesheet" href="alt-theme.css">-->
+<link rel="stylesheet" id="scenarioStylesheet" href="alt-theme.css">
+</head>
+<body>
+<div class="app">
+
+  <div class="masthead">
+    <select id="scenarioSelect" class="scenario-select" aria-label="Scenario"></select>
+    <div class="rec">LIVE</div>
+  </div>
+
+  <div class="tabs">
+    <button class="tab active" data-tab="story">Story Mode</button>
+    <button class="tab" data-tab="rational">Rational Mode</button>
+    <button class="tab" data-tab="deceivable">Deceivable Mode</button>
+    <button class="tab" data-tab="console">Control Panel</button>
+    <button class="tab" data-tab="frames">Frames</button>
+  </div>
+
+  <section id="viewer">
+    <div class="framebar">
+      <div class="count">FRAME <b id="frameNum">1</b> / <b id="frameTotal">?</b></div>
+      <div class="dots" id="frameDots"></div>
+    </div>
+
+    <div class="viewer-grid">
+      <div class="col-left">
+        <div class="shot-wrap" id="shotWrap" data-frame="">
+          <img id="shotImg" style="display:none">
+          <div class="shot-placeholder" id="shotPlaceholder">
+            <div class="icon">&#9635;</div>
+            <div class="desc" id="shotDesc"></div>
+            <div class="file" id="shotFile"></div>
+          </div>
+          <div class="timer-wrap invisible" id="timerWrap">
+            <div class="timer" id="timerValue">20</div>
+            <div class="timer-label">seconds remaining</div>
+          </div>
+        </div>
+        <div class="caption" id="caption"></div>
+
+        <div class="nav">
+          <span class="nav-group">
+            <button class="navbtn navbtn-jump" id="firstBtn" title="Jump to first frame">&laquo;</button>
+            <button class="navbtn" id="prevBtn">&lsaquo; Prev frame</button>
+          </span>
+          <span class="nav-group">
+            <button class="navbtn" id="nextBtn">Next frame &rsaquo;</button>
+            <button class="navbtn navbtn-jump" id="lastBtn" title="Jump to last frame">&raquo;</button>
+          </span>
+        </div>
+      </div>
+
+      <div class="col-right">
+        <div class="info-slot" id="infoSlot"><!-- panels injected by engine.js --></div>
+
+        <div class="actions" id="actionRow"><!-- buttons injected by engine.js --></div>
+
+        <div class="hud denouement-hud hidden" id="denouementPanel"></div>
+      </div>
+    </div>
+  </section>
+
+  <section id="consoleTab" class="hidden"><!-- injected by engine.js --></section>
+
+  <section id="framesTab" class="hidden"><!-- injected by engine.js --></section>
+
+  <footer>All figures are computed live in your browser — nothing is hard-coded per frame.</footer>
+</div>
+
+<script src="model.js"></script>
+<script src="scenarios-manifest.js"></script>
+<script>
+(function(){
+  var list = window.SCENARIO_LIST;
+  var selectEl = document.getElementById('scenarioSelect');
+  var registry = {}; // scenario id -> that scenario's SCENARIO object
+
+  function populateSelect(activeId){
+    selectEl.innerHTML = list.map(function(s){
+      return '<option value="' + s.id + '"' + (s.id===activeId ? ' selected' : '') + '>' + s.title + '</option>';
+    }).join('');
+  }
+
+  // Helper function that sets the stylesheet from whatever scenario is active.
+  function applyStylesheet(scenario){
+  var href = (scenario && scenario.css) || 'alt-theme.css'; // fallback if a scenario omits css
+  document.getElementById('scenarioStylesheet').setAttribute('href', href);
+  }
+  
+
+  // Scenario scripts and engine.js are loaded as real <script src> tags
+  // (never fetch()/XHR) so the demo keeps working when opened straight
+  // from disk — fetching local files under file:// is blocked by CORS in
+  // most browsers, but <script src> loading isn't.
+  function loadScript(src, onReady, onFail){
+    var tag = document.createElement('script');
+    tag.src = src;
+    tag.onload = onReady;
+    tag.onerror = function(){
+      console.error('Failed to load script:', src);
+      if(onFail) onFail(); else alert('Could not load ' + src);
+    };
+    document.body.appendChild(tag);
+  }
+
+  // Every scenario script is fetched and executed exactly once, up front,
+  // in sequence — each one sets window.SCENARIO momentarily, which gets
+  // filed into `registry` under its manifest id before the next one loads.
+  // Switching scenarios afterwards (see window.switchScenario below) is
+  // then a pure in-memory swap: no further script loading, so there's no
+  // async loading left to race against and nothing can show stale content.
+  // A scenario that fails to load is skipped (with a console warning)
+  // rather than silently stalling the whole chain.
+  function preloadAll(onDone){
+    var i = 0;
+    (function next(){
+      if(i >= list.length){ onDone(); return; }
+      var entry = list[i++];
+      loadScript(entry.script, function(){
+        window.SCENARIO.__scenarioId = entry.id;
+        registry[entry.id] = window.SCENARIO;
+        next();
+      }, function(){
+        console.error('Scenario "' + entry.id + '" (' + entry.script + ') failed to load — skipping it.');
+        next();
+      });
+    })();
+  }
+
+
+  window.switchScenario = function(id){
+    if(!registry[id]) return;
+    window.SCENARIO = registry[id];
+    applyStylesheet(window.SCENARIO); 
+    window.initIncidentConsole(); // rebuilds everything from the new window.SCENARIO
+    populateSelect(id);
+  };
+
+  var defaultEntry = list[0];
+  populateSelect(defaultEntry.id);
+  selectEl.addEventListener('change', function(e){ window.switchScenario(e.target.value); });
+
+  preloadAll(function(){
+    var startId = registry[defaultEntry.id] ? defaultEntry.id : Object.keys(registry)[0];
+    if(!startId){ alert('No scenarios could be loaded — check the filenames in scenarios-manifest.js.'); return; }
+    window.SCENARIO = registry[startId];
+    applyStylesheet(window.SCENARIO); 
+    loadScript('engine.js'); // engine.js self-initializes once, at the end, from window.SCENARIO
+  });
+})();
+</script>
+</body>
+</html>
